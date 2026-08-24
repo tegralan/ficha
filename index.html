@@ -346,7 +346,7 @@
           </label>
           <input class="honey" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
           <div id="form-result" class="form-result" role="alert" aria-live="polite"></div>
-          <button id="submit-button" class="primary-button" type="submit" disabled>Enviar solicitud de mediación <span aria-hidden="true">→</span></button>
+          <button id="submit-button" class="primary-button" type="submit">Enviar solicitud de mediación <span aria-hidden="true">→</span></button>
           <p class="submit-help">La solicitud y el Art. 92 se enviarán juntos al correo configurado del Centro.</p>
         </section>
       </form>
@@ -484,7 +484,7 @@
         uploadTitle.textContent = estado === "checking" ? "Verificando documento…" : "Adjuntar Art. 92 firmado";
       }
       uploadMessage.textContent = mensaje || "Seleccioná el PDF original. No será modificado.";
-      submitButton.disabled = !articuloValido;
+      submitButton.disabled = false;
       actualizarProgreso();
     }
 
@@ -611,6 +611,12 @@
       evento.preventDefault();
       resultBox.className = "form-result";
 
+      if (!archivoArt92 || !articuloValido) {
+        mostrarResultado("error", "Adjuntá un Art. 92 válido antes de enviar.");
+        uploadBox.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+
       if (!form.checkValidity()) {
         form.reportValidity();
         mostrarResultado("error", "Revisá los campos obligatorios antes de enviar.");
@@ -688,7 +694,7 @@
         mostrarResultado("error", error instanceof Error ? error.message : "No se pudo conectar con el servicio de correo. Intentá nuevamente.");
       } finally {
         submitButton.innerHTML = "Enviar solicitud de mediación <span aria-hidden=\"true\">→</span>";
-        submitButton.disabled = !articuloValido;
+        submitButton.disabled = false;
       }
     });
 
