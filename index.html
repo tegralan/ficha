@@ -1,0 +1,319 @@
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script>
+    "use strict";
+
+    /* EDITAR SOLAMENTE ESTA LÍNEA PARA CAMBIAR EL CORREO DESTINATARIO */
+    const CORREO_DESTINO = "seglanar@gmail.com";
+
+    const MAX_ARCHIVO_BYTES = 10 * 1024 * 1024;
+    const MAX_PAGINAS_ART92 = 5;
+    const tipos = ["denunciantes", "denunciados"];
+    const partes = { denunciantes: [], denunciados: [] };
+    let archivoArt92 = null;
+    let articuloValido = false;
+
+    const form = document.getElementById("mediation-form");
+    const art92Input = document.getElementById("art92");
+    const uploadBox = document.getElementById("upload-box");
+    const uploadTitle = document.getElementById("upload-title");
+    const uploadMessage = document.getElementById("upload-message");
+    const articleError = document.getElementById("article-error");
+    const submitButton = document.getElementById("submit-button");
+    const resultBox = document.getElementById("form-result");
+
+    function nuevaParte() {
+      return { nombre: "", documento: "", fijo: "", celular: "", email: "", conformidad: "" };
+    }
+
+    function escapar(texto) {
+      return String(texto || "").replace(/[&<>'"]/g, caracter => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", "\"": "&quot;"
+      })[caracter]);
+    }
+
+    function tarjetaParte(tipo, parte, indice) {
+      const singular = tipo === "denunciantes" ? "denunciante" : "denunciada";
+      return `
+        <article class="party-card" data-party-card="${tipo}-${indice}">
+          <header>
+            <div><span class="party-dot" aria-hidden="true"></span>Parte ${singular} ${indice + 1}</div>
+            ${partes[tipo].length > 1 ? `<button class="text-button danger" type="button" data-remove-party="${tipo}" data-index="${indice}">Quitar</button>` : ""}
+          </header>
+          <div class="field-grid">
+            <label class="field span-2"><span>Nombre y apellido *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="nombre" autocomplete="name" value="${escapar(parte.nombre)}" placeholder="Nombre completo"></label>
+            <label class="field"><span>DNI / Pasaporte</span><input data-party-type="${tipo}" data-index="${indice}" data-field="documento" value="${escapar(parte.documento)}" placeholder="Documento"></label>
+            <label class="field"><span>Teléfono fijo</span><input data-party-type="${tipo}" data-index="${indice}" data-field="fijo" inputmode="tel" value="${escapar(parte.fijo)}" placeholder="011 0000-0000"></label>
+            <label class="field"><span>Celular</span><input data-party-type="${tipo}" data-index="${indice}" data-field="celular" inputmode="tel" value="${escapar(parte.celular)}" placeholder="11 0000-0000"></label>
+            <label class="field"><span>Correo electrónico</span><input data-party-type="${tipo}" data-index="${indice}" data-field="email" type="email" value="${escapar(parte.email)}" placeholder="nombre@correo.gob.ar"></label>
+            <label class="field"><span>Conformidad *</span><select required data-party-type="${tipo}" data-index="${indice}" data-field="conformidad">
+              <option value="">Seleccionar</option>
+              ${["Sí", "No", "Pendiente", "Sin contacto"].map(opcion => `<option${parte.conformidad === opcion ? " selected" : ""}>${opcion}</option>`).join("")}
+            </select></label>
+          </div>
+        </article>`;
+    }
+
+    function renderizarPartes(tipo) {
+      document.getElementById(`${tipo}-list`).innerHTML = partes[tipo].map((parte, indice) => tarjetaParte(tipo, parte, indice)).join("");
+      document.getElementById(`${tipo}-counter`).textContent = String(partes[tipo].length);
+      actualizarProgreso();
+    }
+
+    function guardarPartesDesdePantalla() {
+      document.querySelectorAll("[data-party-type][data-field]").forEach(campo => {
+        const tipo = campo.dataset.partyType;
+        const indice = Number(campo.dataset.index);
+        if (partes[tipo] && partes[tipo][indice]) {
+          partes[tipo][indice][campo.dataset.field] = campo.value;
+        }
+      });
+    }
+
+    function validarPartes() {
+      guardarPartesDesdePantalla();
+      for (const tipo of tipos) {
+        for (let indice = 0; indice < partes[tipo].length; indice += 1) {
+          const parte = partes[tipo][indice];
+          if (!parte.nombre.trim() || (!parte.fijo.trim() && !parte.celular.trim()) || !parte.conformidad) {
+            const nombreTipo = tipo === "denunciantes" ? "denunciante" : "denunciada";
+            mostrarResultado("error", `Completá nombre, al menos un teléfono y conformidad de la parte ${nombreTipo} ${indice + 1}.`);
+            const foco = document.querySelector(`[data-party-type="${tipo}"][data-index="${indice}"][data-field="${!parte.nombre.trim() ? "nombre" : (!parte.fijo.trim() && !parte.celular.trim() ? "celular" : "conformidad")}"]`);
+            if (foco) foco.focus();
+            return false;
+          }
+        }
+      }
+      return true;
+    }
+
+    function estadoArticulo(estado, mensaje) {
+      uploadBox.classList.remove("valid", "invalid");
+      articleError.hidden = true;
+      articleError.textContent = "";
+      if (estado === "valid") {
+        uploadBox.classList.add("valid");
+        uploadTitle.textContent = "Documento verificado";
+      } else if (estado === "invalid") {
+        uploadBox.classList.add("invalid");
+        uploadTitle.textContent = "Adjuntar Art. 92 firmado";
+        articleError.hidden = false;
+        articleError.textContent = mensaje;
+      } else {
+        uploadTitle.textContent = estado === "checking" ? "Verificando documento…" : "Adjuntar Art. 92 firmado";
+      }
+      uploadMessage.textContent = mensaje || "Seleccioná el PDF original. No será modificado.";
+      submitButton.disabled = !articuloValido;
+      actualizarProgreso();
+    }
+
+    async function validarArticulo(archivo) {
+      archivoArt92 = null;
+      articuloValido = false;
+      if (!archivo) {
+        estadoArticulo("idle", "");
+        return;
+      }
+      if (!(archivo.type === "application/pdf" || archivo.name.toLowerCase().endsWith(".pdf"))) {
+        estadoArticulo("invalid", "El documento debe estar en formato PDF.");
+        return;
+      }
+      if (archivo.size > MAX_ARCHIVO_BYTES) {
+        estadoArticulo("invalid", "El PDF supera el máximo permitido de 10 MB.");
+        return;
+      }
+      estadoArticulo("checking", "Comprobando el documento seleccionado.");
+      try {
+        if (!window.PDFLib || !window.PDFLib.PDFDocument) throw new Error("PDFLib no disponible");
+        const pdf = await window.PDFLib.PDFDocument.load(await archivo.arrayBuffer(), { ignoreEncryption: true });
+        const paginas = pdf.getPageCount();
+        if (paginas > MAX_PAGINAS_ART92) {
+          estadoArticulo("invalid", "El archivo supera el límite establecido");
+          return;
+        }
+        archivoArt92 = archivo;
+        articuloValido = true;
+        estadoArticulo("valid", `${archivo.name} · ${paginas} ${paginas === 1 ? "carilla" : "carillas"} · ${Math.ceil(archivo.size / 1024)} KB`);
+      } catch (error) {
+        estadoArticulo("invalid", "No se pudo leer el PDF. Puede estar dañado o protegido.");
+      }
+    }
+
+    function parteCompleta(parte) {
+      return Boolean(parte.nombre.trim() && (parte.fijo.trim() || parte.celular.trim()) && parte.conformidad);
+    }
+
+    function actualizarProgreso() {
+      guardarPartesDesdePantalla();
+      const datos = new FormData(form);
+      const chequeos = [
+        String(datos.get("cuij") || "").trim(),
+        String(datos.get("caratula") || "").trim(),
+        String(datos.get("ddh") || "").trim(),
+        partes.denunciantes.length > 0 && partes.denunciantes.every(parteCompleta),
+        partes.denunciados.length > 0 && partes.denunciados.every(parteCompleta),
+        datos.get("habilitacionExpediente"),
+        articuloValido,
+        datos.get("confirmacion")
+      ];
+      const porcentaje = Math.round((chequeos.filter(Boolean).length / chequeos.length) * 100);
+      document.getElementById("progress-value").textContent = `${porcentaje}%`;
+      document.getElementById("progress-bar").style.width = `${porcentaje}%`;
+    }
+
+    function formatearPartes(lista) {
+      return lista.map((parte, indice) => [
+        `${indice + 1}. ${parte.nombre}`,
+        parte.documento ? `Documento: ${parte.documento}` : "",
+        (parte.fijo || parte.celular) ? `Teléfono: ${[parte.fijo, parte.celular].filter(Boolean).join(" / ")}` : "",
+        parte.email ? `Correo: ${parte.email}` : "",
+        parte.conformidad ? `Conformidad: ${parte.conformidad}` : ""
+      ].filter(Boolean).join(" | ")).join("\n");
+    }
+
+    function mostrarResultado(tipo, mensaje) {
+      resultBox.className = `form-result visible ${tipo}`;
+      resultBox.innerHTML = `<strong>${tipo === "success" ? "Solicitud enviada" : "No se pudo enviar"}</strong><span>${escapar(mensaje)}</span>`;
+      resultBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+
+    function agregarCampo(salida, nombre, valor) {
+      salida.set(nombre, String(valor || "").trim());
+    }
+
+    function limpiarFormulario() {
+      form.reset();
+      partes.denunciantes = [nuevaParte()];
+      partes.denunciados = [nuevaParte()];
+      renderizarPartes("denunciantes");
+      renderizarPartes("denunciados");
+      archivoArt92 = null;
+      articuloValido = false;
+      estadoArticulo("idle", "");
+      art92Input.value = "";
+      actualizarProgreso();
+    }
+
+    document.querySelectorAll("[data-add-party]").forEach(boton => {
+      boton.addEventListener("click", () => {
+        guardarPartesDesdePantalla();
+        const tipo = boton.dataset.addParty;
+        partes[tipo].push(nuevaParte());
+        renderizarPartes(tipo);
+      });
+    });
+
+    document.addEventListener("click", evento => {
+      const boton = evento.target.closest("[data-remove-party]");
+      if (!boton) return;
+      guardarPartesDesdePantalla();
+      const tipo = boton.dataset.removeParty;
+      partes[tipo].splice(Number(boton.dataset.index), 1);
+      renderizarPartes(tipo);
+    });
+
+    document.addEventListener("input", evento => {
+      const campo = evento.target.closest("[data-party-type][data-field]");
+      if (campo) {
+        const t = campo.dataset.partyType;
+        const idx = Number(campo.dataset.index);
+        if (partes[t] && partes[t][idx]) {
+          partes[t][idx][campo.dataset.field] = campo.value;
+        }
+      }
+      actualizarProgreso();
+    });
+    document.addEventListener("change", actualizarProgreso);
+    art92Input.addEventListener("change", () => validarArticulo(art92Input.files && art92Input.files[0] ? art92Input.files[0] : null));
+
+    form.addEventListener("submit", async evento => {
+      evento.preventDefault();
+      resultBox.className = "form-result";
+
+      if (!form.checkValidity()) {
+        form.reportValidity();
+        mostrarResultado("error", "Revisá los campos obligatorios antes de enviar.");
+        return;
+      }
+
+      // Restricción de dominio de correo de la fiscalía
+      const datosTemp = new FormData(form);
+      const correoFiscalia = String(datosTemp.get("fiscaliaEmail") || "").trim().toLowerCase();
+      if (!correoFiscalia.endsWith("@fiscalias.gob.ar")) {
+        mostrarResultado("error", "El envío está restringido a correos institucionales con dominio @fiscalias.gob.ar");
+        const campoEmail = document.querySelector('input[name="fiscaliaEmail"]');
+        if (campoEmail) campoEmail.focus();
+        return;
+      }
+
+      if (!validarPartes()) return;
+      if (!archivoArt92 || !articuloValido) {
+        mostrarResultado("error", "Adjuntá un Art. 92 válido antes de enviar.");
+        return;
+      }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(CORREO_DESTINO)) {
+        mostrarResultado("error", "El correo destinatario configurado no es válido.");
+        return;
+      }
+      if (String(datosTemp.get("website") || "").trim()) return;
+
+      const datos = Object.fromEntries(datosTemp.entries());
+      const salida = new FormData();
+      agregarCampo(salida, "_subject", `Solicitud de audiencia de mediación · ${datos.cuij}`);
+      agregarCampo(salida, "_template", "table");
+      agregarCampo(salida, "_captcha", "false");
+      agregarCampo(salida, "_url", window.location.href);
+      agregarCampo(salida, "email", datos.fiscaliaEmail);
+      agregarCampo(salida, "CUIJ EJE", datos.cuij);
+      agregarCampo(salida, "MPF", datos.mpf);
+      agregarCampo(salida, "Carátula", datos.caratula);
+      agregarCampo(salida, "Objeto de autos (DDH)", datos.ddh);
+      agregarCampo(salida, "Vencimiento de la IPP", datos.vencimientoIpp);
+      agregarCampo(salida, "Plazo para gestionar", datos.plazo);
+      agregarCampo(salida, "Partes denunciantes", formatearPartes(partes.denunciantes));
+      agregarCampo(salida, "Partes denunciadas", formatearPartes(partes.denunciados));
+      agregarCampo(salida, "Defensoría / abogado particular", datos.defensa);
+      agregarCampo(salida, "Teléfono de la defensa", datos.defensaTelefono);
+      agregarCampo(salida, "Correo de la defensa", datos.defensaEmail);
+      agregarCampo(salida, "Asesoría Tutelar", datos.asesoria);
+      agregarCampo(salida, "Querella particular", datos.querella);
+      agregarCampo(salida, "Teléfono de Asesoría Tutelar", datos.asesoriaTelefono);
+      agregarCampo(salida, "Fiscalía interviniente", datos.fiscalia);
+      agregarCampo(salida, "Responsable de la causa", datos.fiscaliaResponsable);
+      agregarCampo(salida, "Teléfono de fiscalía", datos.fiscaliaTelefono);
+      agregarCampo(salida, "Correo de fiscalía", datos.fiscaliaEmail);
+      agregarCampo(salida, "Sumariante", datos.sumariante);
+      agregarCampo(salida, "Modalidad requerida", datos.modalidad);
+      agregarCampo(salida, "Habilitación en el expediente", "Confirmada");
+      salida.set("attachment", archivoArt92, archivoArt92.name);
+
+      submitButton.disabled = true;
+      submitButton.innerHTML = "Enviando…";
+      try {
+        const respuesta = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(CORREO_DESTINO)}`, {
+          method: "POST",
+          headers: { Accept: "application/json" },
+          body: salida
+        });
+        const contenido = await respuesta.text();
+        let respuestaJson = {};
+        try { respuestaJson = JSON.parse(contenido); } catch (error) { respuestaJson = {}; }
+        if (!respuesta.ok || respuestaJson.success === false || respuestaJson.success === "false") {
+          throw new Error(respuestaJson.message || "El servicio de correo no pudo procesar la solicitud.");
+        }
+        mostrarResultado("success", "La solicitud fue remitida. En el primer uso, el correo destinatario debe confirmar la activación antes de recibirla.");
+        limpiarFormulario();
+      } catch (error) {
+        mostrarResultado("error", error instanceof Error ? error.message : "No se pudo conectar con el servicio de correo. Intentá nuevamente.");
+      } finally {
+        submitButton.innerHTML = "Enviar solicitud de mediación <span aria-hidden=\"true\">→</span>";
+        submitButton.disabled = !articuloValido;
+      }
+    });
+
+    // Inicialización segura de las listas
+    partes.denunciantes = [nuevaParte()];
+    partes.denunciados = [nuevaParte()];
+    renderizarPartes("denunciantes");
+    renderizarPartes("denunciados");
+    actualizarProgreso();
+  </script>
