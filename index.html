@@ -599,7 +599,7 @@
     document.addEventListener("change", actualizarProgreso);
     art92Input.addEventListener("change", () => validarArticulo(art92Input.files && art92Input.files[0] ? art92Input.files[0] : null));
 
-    form.addEventListener("submit", async evento => {
+   form.addEventListener("submit", async evento => {
       evento.preventDefault();
       resultBox.className = "form-result";
 
@@ -608,6 +608,18 @@
         mostrarResultado("error", "Revisá los campos obligatorios antes de enviar.");
         return;
       }
+
+      // Validar dominio del correo de la fiscalía
+      const datosTemp = new FormData(form);
+      const correoFiscalia = String(datosTemp.get("fiscaliaEmail") || "").trim().toLowerCase();
+      
+      if (!correoFiscalia.endsWith("@fiscalias.gob.ar")) {
+        mostrarResultado("error", "El envío está restringido a correos institucionales con dominio @fiscalias.gob.ar");
+        const campoEmail = document.querySelector('input[name="fiscaliaEmail"]');
+        if (campoEmail) campoEmail.focus();
+        return;
+      }
+
       if (!validarPartes()) return;
       if (!archivoArt92 || !articuloValido) {
         mostrarResultado("error", "Adjuntá un Art. 92 válido antes de enviar.");
@@ -617,9 +629,9 @@
         mostrarResultado("error", "El correo destinatario configurado no es válido.");
         return;
       }
-      if (String(new FormData(form).get("website") || "").trim()) return;
+      if (String(datosTemp.get("website") || "").trim()) return;
 
-      const datos = Object.fromEntries(new FormData(form).entries());
+      const datos = Object.fromEntries(datosTemp.entries());
       const salida = new FormData();
       agregarCampo(salida, "_subject", `Solicitud de audiencia de mediación · ${datos.cuij}`);
       agregarCampo(salida, "_template", "table");
