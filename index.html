@@ -273,7 +273,6 @@
             </label>
             <label class="field"><span>MPF *</span><input required name="mpf" placeholder="Número de actuación MPF"></label>
             <label class="field span-2"><span>Carátula *</span><input required name="caratula"></label>
-            <label class="field span-2"><span>Objeto de autos (DDH) *</span><textarea required rows="4" name="ddh" placeholder="Describir el objeto procesal determinado en el Art. 92"></textarea></label>
             <label class="field"><span>Vencimiento de la IPP *</span><input required name="vencimientoIpp" type="date"></label>
             <label class="field"><span>Plazo para gestionar *</span><input required name="plazo" placeholder="Ej.: 10 días"></label>
           </div>
@@ -530,7 +529,6 @@
       const chequeos = [
         String(datos.get("cuij") || "").trim(),
         String(datos.get("caratula") || "").trim(),
-        String(datos.get("ddh") || "").trim(),
         partes.denunciantes.length > 0 && partes.denunciantes.every(parteCompleta),
         partes.denunciados.length > 0 && partes.denunciados.every(parteCompleta),
         datos.get("habilitacionExpediente"),
@@ -550,6 +548,170 @@
         parte.email ? `Correo: ${parte.email}` : "",
         parte.conformidad ? `Conformidad: ${parte.conformidad}` : ""
       ].filter(Boolean).join(" | ")).join("\n");
+    }
+
+    function nombreFichaDesdeCuij(cuij) {
+      const normalizado = String(cuij || "").trim().replace(/\s+/g, "").toUpperCase();
+      const coincidencia = normalizado.match(/^[A-Z]-\d{2}-(\d+)-\d+\/(\d{4})-\d+$/);
+      if (!coincidencia) {
+        throw new Error("El CUIJ EJE debe tener el formato J-01-00233713-0/2025-0.");
+      }
+      const numero = coincidencia[1].replace(/^0+/, "") || "0";
+      return `${numero}-${coincidencia[2].slice(-2)}.pdf`;
+    }
+
+    function textoSeguroPdf(valor) {
+      return String(valor == null ? "" : valor)
+        .normalize("NFC")
+        .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, "?");
+    }
+
+    function dividirTextoPdf(texto, fuente, tamano, anchoMaximo) {
+      const lineas = [];
+      textoSeguroPdf(texto).split(/\r?\n/).forEach(parrafo => {
+        const palabras = parrafo.trim().split(/\s+/).filter(Boolean);
+        if (!palabras.length) {
+          lineas.push("");
+          return;
+        }
+        let linea = "";
+        palabras.forEach(palabra => {
+          const candidata = linea ? `${linea} ${palabra}` : palabra;
+          if (!linea || fuente.widthOfTextAtSize(candidata, tamano) <= anchoMaximo) {
+            linea = candidata;
+          } else {
+            lineas.push(linea);
+            linea = palabra;
+          }
+        });
+        if (linea) lineas.push(linea);
+      });
+      return lineas;
+    }
+
+    async function crearFichaDatosPdf(datos, archivo, datosPartes) {
+      if (!window.PDFLib || !window.PDFLib.PDFDocument) {
+        throw new Error("No se pudo cargar el generador de la ficha PDF. Recargá la página e intentá nuevamente.");
+      }
+
+      const { PDFDocument, StandardFonts, rgb } = window.PDFLib;
+      const pdf = await PDFDocument.create();
+      const regular = await pdf.embedFont(StandardFonts.Helvetica);
+      const negrita = await pdf.embedFont(StandardFonts.HelveticaBold);
+      const colorTexto = rgb(0.09, 0.14, 0.18);
+      const colorMarca = rgb(0.12, 0.38, 0.36);
+      const ancho = 595.28;
+      const alto = 841.89;
+      const margen = 48;
+      const anchoTexto = ancho - margen * 2;
+      const minimoY = 58;
+      let pagina;
+      let y;
+
+      const nuevaPagina = () => {
+        pagina = pdf.addPage([ancho, alto]);
+        y = alto - 48;
+      };
+
+      const escribir = (texto, opciones = {}) => {
+        const fuente = opciones.fuente || regular;
+        const tamano = opciones.tamano || 10;
+        const color = opciones.color || colorTexto;
+        const espacio = opciones.espacio == null ? 4 : opciones.espacio;
+        const paso = tamano + 4;
+        dividirTextoPdf(texto, fuente, tamano, anchoTexto).forEach(linea => {
+          if (y - paso < minimoY) nuevaPagina();
+          if (linea) {
+            pagina.drawText(linea, { x: margen, y, size: tamano, font: fuente, color });
+          }
+          y -= paso;
+        });
+        y -= espacio;
+      };
+
+      const seccion = titulo => {
+        if (y < minimoY + 44) nuevaPagina();
+        y -= 3;
+        pagina.drawLine({
+          start: { x: margen, y: y + 14 },
+          end: { x: ancho - margen, y: y + 14 },
+          thickness: 0.7,
+          color: colorMarca
+        });
+        escribir(titulo, { fuente: negrita, tamano: 11, color: colorMarca, espacio: 5 });
+      };
+
+      const dato = (etiqueta, valor) => {
+        escribir(`${etiqueta}: ${String(valor || "").trim() || "-"}`, { espacio: 2 });
+      };
+
+      const agregarPartes = (titulo, lista) => {
+        seccion(titulo);
+        lista.forEach((parte, indice) => {
+          escribir(`${indice + 1}. ${parte.nombre || "-"}`, { fuente: negrita, tamano: 10, espacio: 1 });
+          dato("Documento", parte.documento);
+          dato("Teléfono fijo", parte.fijo);
+          dato("Celular", parte.celular);
+          dato("Correo electrónico", parte.email);
+          dato("Conformidad", parte.conformidad);
+          y -= 3;
+        });
+      };
+
+      nuevaPagina();
+      escribir("CENTRO DE MEDIACIÓN Y MÉTODOS ALTERNATIVOS DE ABORDAJE Y SOLUCIÓN DE CONFLICTOS", {
+        fuente: negrita,
+        tamano: 9,
+        color: colorMarca,
+        espacio: 8
+      });
+      escribir("FICHA DE DATOS - SOLICITUD DE MEDIACIÓN", { fuente: negrita, tamano: 16, espacio: 3 });
+      escribir(`CUIJ EJE: ${datos.cuij}`, { fuente: negrita, tamano: 11, espacio: 9 });
+
+      seccion("IDENTIFICACIÓN DE LA CAUSA");
+      dato("CUIJ EJE", datos.cuij);
+      dato("MPF", datos.mpf);
+      dato("Carátula", datos.caratula);
+      dato("Vencimiento de la IPP", datos.vencimientoIpp);
+      dato("Plazo para gestionar", datos.plazo);
+
+      agregarPartes("PARTES DENUNCIANTES", datosPartes.denunciantes);
+      agregarPartes("PARTES DENUNCIADAS", datosPartes.denunciados);
+
+      seccion("CONTACTO DE LA DEFENSA");
+      dato("Defensoría / abogado particular", datos.defensa);
+      dato("Teléfono", datos.defensaTelefono);
+      dato("Correo electrónico", datos.defensaEmail);
+      dato("Asesoría Tutelar", datos.asesoria);
+      dato("Querella particular", datos.querella);
+      dato("Teléfono de Asesoría Tutelar", datos.asesoriaTelefono);
+
+      seccion("CONTACTO DE FISCALÍA");
+      dato("Fiscalía interviniente", datos.fiscalia);
+      dato("Responsable de la causa", datos.fiscaliaResponsable);
+      dato("Teléfono", datos.fiscaliaTelefono);
+      dato("Correo electrónico", datos.fiscaliaEmail);
+      dato("Sumariante", datos.sumariante);
+      dato("Modalidad requerida", datos.modalidad);
+      dato("Habilitación en el expediente al Centro de Mediación", "Confirmada");
+
+      seccion("DOCUMENTACIÓN");
+      dato("Archivo Art. 92 adjunto", archivo && archivo.name);
+      dato("Revisión de datos y documentación", "Confirmada");
+
+      const paginas = pdf.getPages();
+      paginas.forEach((hoja, indice) => {
+        hoja.drawText(`Página ${indice + 1} de ${paginas.length}`, {
+          x: ancho - margen - 72,
+          y: 27,
+          size: 8,
+          font: regular,
+          color: rgb(0.38, 0.44, 0.47)
+        });
+      });
+
+      const bytes = await pdf.save();
+      return new File([bytes], nombreFichaDesdeCuij(datos.cuij), { type: "application/pdf" });
     }
 
     function mostrarResultado(tipo, mensaje) {
@@ -634,10 +796,6 @@
       }
 
       if (!validarPartes()) return;
-      if (!archivoArt92 || !articuloValido) {
-        mostrarResultado("error", "Adjuntá un Art. 92 válido antes de enviar.");
-        return;
-      }
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(CORREO_DESTINO)) {
         mostrarResultado("error", "El correo destinatario configurado no es válido.");
         return;
@@ -645,38 +803,45 @@
       if (String(datosTemp.get("website") || "").trim()) return;
 
       const datos = Object.fromEntries(datosTemp.entries());
-      const salida = new FormData();
-      agregarCampo(salida, "_subject", `Solicitud de audiencia de mediación · ${datos.cuij}`);
-      agregarCampo(salida, "_template", "table");
-      agregarCampo(salida, "_captcha", "false");
-      agregarCampo(salida, "_url", window.location.href);
-      agregarCampo(salida, "email", datos.fiscaliaEmail);
-      agregarCampo(salida, "CUIJ EJE", datos.cuij);
-      agregarCampo(salida, "MPF", datos.mpf);
-      agregarCampo(salida, "Carátula", datos.caratula);
-      agregarCampo(salida, "Objeto de autos (DDH)", datos.ddh);
-      agregarCampo(salida, "Vencimiento de la IPP", datos.vencimientoIpp);
-      agregarCampo(salida, "Plazo para gestionar", datos.plazo);
-      agregarCampo(salida, "Partes denunciantes", formatearPartes(partes.denunciantes));
-      agregarCampo(salida, "Partes denunciadas", formatearPartes(partes.denunciados));
-      agregarCampo(salida, "Defensoría / abogado particular", datos.defensa);
-      agregarCampo(salida, "Teléfono de la defensa", datos.defensaTelefono);
-      agregarCampo(salida, "Correo de la defensa", datos.defensaEmail);
-      agregarCampo(salida, "Asesoría Tutelar", datos.asesoria);
-      agregarCampo(salida, "Querella particular", datos.querella);
-      agregarCampo(salida, "Teléfono de Asesoría Tutelar", datos.asesoriaTelefono);
-      agregarCampo(salida, "Fiscalía interviniente", datos.fiscalia);
-      agregarCampo(salida, "Responsable de la causa", datos.fiscaliaResponsable);
-      agregarCampo(salida, "Teléfono de fiscalía", datos.fiscaliaTelefono);
-      agregarCampo(salida, "Correo de fiscalía", datos.fiscaliaEmail);
-      agregarCampo(salida, "Sumariante", datos.sumariante);
-      agregarCampo(salida, "Modalidad requerida", datos.modalidad);
-      agregarCampo(salida, "Habilitación en el expediente", "Confirmada");
-      salida.set("attachment", archivoArt92, archivoArt92.name);
-
       submitButton.disabled = true;
-      submitButton.innerHTML = "Enviando…";
+      submitButton.innerHTML = "Generando ficha PDF…";
+
       try {
+        const fichaDatosPdf = await crearFichaDatosPdf(datos, archivoArt92, partes);
+        if (archivoArt92.size + fichaDatosPdf.size > MAX_ARCHIVO_BYTES) {
+          throw new Error("El Art. 92 y la ficha de datos superan juntos el límite de 10 MB.");
+        }
+
+        const salida = new FormData();
+        agregarCampo(salida, "_subject", `Solicitud de audiencia de mediación · ${datos.cuij}`);
+        agregarCampo(salida, "_template", "table");
+        agregarCampo(salida, "_captcha", "false");
+        agregarCampo(salida, "_url", window.location.href);
+        agregarCampo(salida, "email", datos.fiscaliaEmail);
+        agregarCampo(salida, "CUIJ EJE", datos.cuij);
+        agregarCampo(salida, "MPF", datos.mpf);
+        agregarCampo(salida, "Carátula", datos.caratula);
+        agregarCampo(salida, "Vencimiento de la IPP", datos.vencimientoIpp);
+        agregarCampo(salida, "Plazo para gestionar", datos.plazo);
+        agregarCampo(salida, "Partes denunciantes", formatearPartes(partes.denunciantes));
+        agregarCampo(salida, "Partes denunciadas", formatearPartes(partes.denunciados));
+        agregarCampo(salida, "Defensoría / abogado particular", datos.defensa);
+        agregarCampo(salida, "Teléfono de la defensa", datos.defensaTelefono);
+        agregarCampo(salida, "Correo de la defensa", datos.defensaEmail);
+        agregarCampo(salida, "Asesoría Tutelar", datos.asesoria);
+        agregarCampo(salida, "Querella particular", datos.querella);
+        agregarCampo(salida, "Teléfono de Asesoría Tutelar", datos.asesoriaTelefono);
+        agregarCampo(salida, "Fiscalía interviniente", datos.fiscalia);
+        agregarCampo(salida, "Responsable de la causa", datos.fiscaliaResponsable);
+        agregarCampo(salida, "Teléfono de fiscalía", datos.fiscaliaTelefono);
+        agregarCampo(salida, "Correo de fiscalía", datos.fiscaliaEmail);
+        agregarCampo(salida, "Sumariante", datos.sumariante);
+        agregarCampo(salida, "Modalidad requerida", datos.modalidad);
+        agregarCampo(salida, "Habilitación en el expediente", "Confirmada");
+        salida.set("attachment", archivoArt92, archivoArt92.name);
+        salida.set("attachment_2", fichaDatosPdf, fichaDatosPdf.name);
+
+        submitButton.innerHTML = "Enviando…";
         const respuesta = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(CORREO_DESTINO)}`, {
           method: "POST",
           headers: { Accept: "application/json" },
@@ -688,7 +853,7 @@
         if (!respuesta.ok || respuestaJson.success === false || respuestaJson.success === "false") {
           throw new Error(respuestaJson.message || "El servicio de correo no pudo procesar la solicitud.");
         }
-        mostrarResultado("success", "La solicitud fue remitida. En el primer uso, el correo destinatario debe confirmar la activación antes de recibirla.");
+        mostrarResultado("success", "La solicitud fue remitida con el Art. 92 y la ficha de datos en PDF. En el primer uso, el correo destinatario debe confirmar la activación antes de recibirla.");
         limpiarFormulario();
       } catch (error) {
         mostrarResultado("error", error instanceof Error ? error.message : "No se pudo conectar con el servicio de correo. Intentá nuevamente.");
