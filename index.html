@@ -300,11 +300,11 @@
           <div class="section-heading"><div><span class="step-kicker">04</span><h2 id="defense-title">Defensa y otros intervinientes</h2></div></div>
           <div class="field-grid">
             <label class="field"><span>Defensoría / abogado particular *</span><input required name="defensa"></label>
-            <label class="field"><span>Teléfono de la defensa</span><input name="defensaTelefono" inputmode="tel"></label>
-            <label class="field"><span>Correo de la defensa</span><input name="defensaEmail" type="email"></label>
-            <label class="field"><span>Asesoría Tutelar</span><input name="asesoria" placeholder="Completar si hay menores"></label>
-            <label class="field"><span>Querella particular</span><input name="querella"></label>
-            <label class="field"><span>Teléfono de Asesoría Tutelar</span><input name="asesoriaTelefono" inputmode="tel"></label>
+            <label class="field"><span>Teléfono de la defensa *</span><input required name="defensaTelefono" inputmode="tel"></label>
+            <label class="field"><span>Correo de la defensa *</span><input required name="defensaEmail" type="email"></label>
+            <label class="field"><span>Asesoría Tutelar *</span><input required name="asesoria" placeholder="Indicar No corresponde si no interviene"></label>
+            <label class="field"><span>Querella particular *</span><input required name="querella" placeholder="Indicar No corresponde si no interviene"></label>
+            <label class="field"><span>Teléfono de Asesoría Tutelar *</span><input required name="asesoriaTelefono" inputmode="tel" placeholder="Indicar No corresponde si no interviene"></label>
           </div>
         </section>
 
@@ -312,11 +312,9 @@
           <div class="section-heading"><div><span class="step-kicker">05</span><h2 id="prosecutor-title">Contacto de fiscalía</h2></div></div>
           <div class="field-grid">
             <label class="field"><span>Fiscalía interviniente *</span><input required name="fiscalia"></label>
-            <label class="field"><span>Responsable de la causa *</span><input required name="fiscaliaResponsable"></label>
+            <label class="field"><span>Sumariante *</span><input required name="sumariante"></label>
             <label class="field"><span>Teléfono *</span><input required name="fiscaliaTelefono" inputmode="tel"></label>
             <label class="field"><span>Correo electrónico *</span><input required name="fiscaliaEmail" type="email"></label>
-            <label class="field"><span>Sumariante *</span><input required name="sumariante"></label>
-            <label class="field"><span>Modalidad requerida *</span><select required name="modalidad"><option value="" selected disabled>Seleccionar</option><option value="VIRTUAL">Virtual</option><option value="PRESENCIAL">Presencial</option></select></label>
           </div>
           <label class="mandatory-action">
             <input required type="checkbox" name="habilitacionExpediente" value="Sí">
@@ -440,10 +438,10 @@
           </header>
           <div class="field-grid">
             <label class="field span-2"><span>Nombre y apellido *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="nombre" autocomplete="name" value="${escapar(parte.nombre)}" placeholder="Nombre completo"></label>
-            <label class="field"><span>DNI / Pasaporte</span><input data-party-type="${tipo}" data-index="${indice}" data-field="documento" value="${escapar(parte.documento)}" placeholder="Documento"></label>
-            <label class="field"><span>Teléfono fijo</span><input data-party-type="${tipo}" data-index="${indice}" data-field="fijo" inputmode="tel" value="${escapar(parte.fijo)}" placeholder="011 0000-0000"></label>
-            <label class="field"><span>Celular</span><input data-party-type="${tipo}" data-index="${indice}" data-field="celular" inputmode="tel" value="${escapar(parte.celular)}" placeholder="11 0000-0000"></label>
-            <label class="field"><span>Correo electrónico</span><input data-party-type="${tipo}" data-index="${indice}" data-field="email" type="email" value="${escapar(parte.email)}" placeholder="nombre@correo.gob.ar"></label>
+            <label class="field"><span>DNI / Pasaporte *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="documento" value="${escapar(parte.documento)}" placeholder="Documento"></label>
+            <label class="field"><span>Teléfono fijo *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="fijo" inputmode="tel" value="${escapar(parte.fijo)}" placeholder="011 0000-0000"></label>
+            <label class="field"><span>Celular *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="celular" inputmode="tel" value="${escapar(parte.celular)}" placeholder="11 0000-0000"></label>
+            <label class="field"><span>Correo electrónico *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="email" type="email" value="${escapar(parte.email)}" placeholder="nombre@correo.gob.ar"></label>
             <label class="field"><span>Conformidad *</span><select required data-party-type="${tipo}" data-index="${indice}" data-field="conformidad">
               <option value="">Seleccionar</option>
               ${["Sí", "No", "Pendiente", "Sin contacto"].map(opcion => `<option${parte.conformidad === opcion ? " selected" : ""}>${opcion}</option>`).join("")}
@@ -470,13 +468,15 @@
 
     function validarPartes() {
       guardarPartesDesdePantalla();
+      const camposObligatorios = ["nombre", "documento", "fijo", "celular", "email", "conformidad"];
       for (const tipo of tipos) {
         for (let indice = 0; indice < partes[tipo].length; indice += 1) {
           const parte = partes[tipo][indice];
-          if (!parte.nombre.trim() || (!parte.fijo.trim() && !parte.celular.trim()) || !parte.conformidad) {
+          const faltante = camposObligatorios.find(campo => !String(parte[campo] || "").trim());
+          if (faltante) {
             const nombreTipo = tipo === "denunciantes" ? "denunciante" : "denunciada";
-            mostrarResultado("error", `Completá nombre, al menos un teléfono y conformidad de la parte ${nombreTipo} ${indice + 1}.`);
-            const foco = document.querySelector(`[data-party-type="${tipo}"][data-index="${indice}"][data-field="${!parte.nombre.trim() ? "nombre" : (!parte.fijo.trim() && !parte.celular.trim() ? "celular" : "conformidad")}"]`);
+            mostrarResultado("error", `Completá todos los datos de la parte ${nombreTipo} ${indice + 1}.`);
+            const foco = document.querySelector(`[data-party-type="${tipo}"][data-index="${indice}"][data-field="${faltante}"]`);
             if (foco) foco.focus();
             return false;
           }
@@ -538,22 +538,21 @@
     }
 
     function parteCompleta(parte) {
-      return Boolean(parte.nombre.trim() && (parte.fijo.trim() || parte.celular.trim()) && parte.conformidad);
+      return ["nombre", "documento", "fijo", "celular", "email", "conformidad"]
+        .every(campo => String(parte[campo] || "").trim());
     }
 
     function actualizarProgreso() {
       guardarPartesDesdePantalla();
-      const datos = new FormData(form);
-      const chequeos = [
-        String(datos.get("cuij") || "").trim(),
-        String(datos.get("caratula") || "").trim(),
-        partes.denunciantes.length > 0 && partes.denunciantes.every(parteCompleta),
-        partes.denunciados.length > 0 && partes.denunciados.every(parteCompleta),
-        datos.get("habilitacionExpediente"),
-        articuloValido,
-        datos.get("confirmacion")
-      ];
-      const porcentaje = Math.round((chequeos.filter(Boolean).length / chequeos.length) * 100);
+      const camposRequeridos = Array.from(form.querySelectorAll("[required]"));
+      const completos = camposRequeridos.filter(campo => {
+        if (campo === art92Input) return articuloValido;
+        if (campo.type === "checkbox" || campo.type === "radio") return campo.checked;
+        return Boolean(String(campo.value || "").trim()) && campo.checkValidity();
+      }).length;
+      const porcentaje = camposRequeridos.length
+        ? Math.round((completos / camposRequeridos.length) * 100)
+        : 0;
       document.getElementById("progress-value").textContent = `${porcentaje}%`;
       document.getElementById("progress-bar").style.width = `${porcentaje}%`;
     }
@@ -706,11 +705,9 @@
 
       seccion("CONTACTO DE FISCALÍA");
       dato("Fiscalía interviniente", datos.fiscalia);
-      dato("Responsable de la causa", datos.fiscaliaResponsable);
       dato("Teléfono", datos.fiscaliaTelefono);
       dato("Correo electrónico", datos.fiscaliaEmail);
       dato("Sumariante", datos.sumariante);
-      dato("Modalidad requerida", datos.modalidad);
       dato("Habilitación en el expediente al Centro de Mediación", "Confirmada");
 
       seccion("DOCUMENTACIÓN");
@@ -795,8 +792,7 @@
             <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>MPF</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.mpf)}</td></tr>
             <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Carátula</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.caratula)}</td></tr>
             <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Fiscalía</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.fiscalia)}</td></tr>
-            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Responsable</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.fiscaliaResponsable)}</td></tr>
-            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Modalidad</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.modalidad)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Sumariante</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.sumariante)}</td></tr>
             <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Cuenta remitente</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(remitente)}</td></tr>
           </table>
           <p>Se adjuntan el documento Art. 92 original y la ficha completa de datos en PDF.</p>
