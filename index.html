@@ -241,8 +241,8 @@
   </header>
 
   <div class="demo-banner" role="status">
-    <strong>Versión de prueba</strong>
-    <span>Usar únicamente datos ficticios hasta conectar el correo institucional.</span>
+    <strong>Acceso institucional</strong>
+    <span>El envío requiere iniciar sesión con una cuenta autorizada del Consejo o del Ministerio Público Fiscal.</span>
   </div>
 
   <main class="page-shell">
@@ -346,7 +346,7 @@
           <input class="honey" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">
           <div id="form-result" class="form-result" role="alert" aria-live="polite"></div>
           <button id="submit-button" class="primary-button" type="submit">Enviar solicitud de mediación <span aria-hidden="true">→</span></button>
-          <p class="submit-help">La solicitud y el Art. 92 se enviarán juntos al correo configurado del Centro.</p>
+          <p class="submit-help">La ficha de datos y el Art. 92 se enviarán desde la cuenta institucional que inicie sesión.</p>
         </section>
       </form>
 
@@ -380,14 +380,32 @@
   </footer>
 
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+  <script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js" crossorigin="anonymous"></script>
   <script>
     "use strict";
 
     /* EDITAR SOLAMENTE ESTA LÍNEA PARA CAMBIAR EL CORREO DESTINATARIO */
     const CORREO_DESTINO = "mediaciononline@jusbaires.gob.ar";
 
-    const MAX_ARCHIVO_BYTES = 10 * 1024 * 1024;
+    const CLIENT_ID = "b26fea36-887e-4021-8611-08c97de5704e";
+    const TENANT_ID = "8e643b8b-b7de-4008-8503-d74eb8b64e7e";
+    const REDIRECT_URI = "https://tegralan.github.io/ficha/";
+    const GRAPH_SCOPES = ["User.Read", "Mail.Send"];
+    const MAX_ARCHIVO_BYTES = 2.5 * 1024 * 1024;
     const MAX_PAGINAS_ART92 = 5;
+
+    const msalInstance = window.msal ? new window.msal.PublicClientApplication({
+      auth: {
+        clientId: CLIENT_ID,
+        authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+        redirectUri: REDIRECT_URI,
+        navigateToLoginRequestUrl: false
+      },
+      cache: {
+        cacheLocation: "sessionStorage",
+        storeAuthStateInCookie: false
+      }
+    }) : null;
     const tipos = ["denunciantes", "denunciados"];
     const partes = { denunciantes: [], denunciados: [] };
     let archivoArt92 = null;
@@ -499,7 +517,7 @@
         return;
       }
       if (archivo.size > MAX_ARCHIVO_BYTES) {
-        estadoArticulo("invalid", "El PDF supera el máximo permitido de 10 MB.");
+        estadoArticulo("invalid", "El PDF supera el máximo permitido de 2,5 MB.");
         return;
       }
       estadoArticulo("checking", "Comprobando el documento seleccionado.");
@@ -714,15 +732,132 @@
       return new File([bytes], nombreFichaDesdeCuij(datos.cuij), { type: "application/pdf" });
     }
 
+
+    async function obtenerAccesoGraph() {
+      if (!msalInstance) {
+        throw new Error("No se pudo cargar el acceso institucional de Microsoft. Recargá la página e intentá nuevamente.");
+      }
+
+      const solicitud = { scopes: GRAPH_SCOPES };
+      let cuenta = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0] || null;
+
+      try {
+        if (!cuenta) {
+          const ingreso = await msalInstance.loginPopup({
+            ...solicitud,
+            prompt: "select_account"
+          });
+          cuenta = ingreso.account;
+          msalInstance.setActiveAccount(cuenta);
+          return { accessToken: ingreso.accessToken, cuenta };
+        }
+
+        msalInstance.setActiveAccount(cuenta);
+        try {
+          const acceso = await msalInstance.acquireTokenSilent({ ...solicitud, account: cuenta });
+          return { accessToken: acceso.accessToken, cuenta };
+        } catch (errorSilencioso) {
+          const acceso = await msalInstance.acquireTokenPopup({ ...solicitud, account: cuenta });
+          cuenta = acceso.account || cuenta;
+          msalInstance.setActiveAccount(cuenta);
+          return { accessToken: acceso.accessToken, cuenta };
+        }
+      } catch (error) {
+        const codigo = String(error && error.errorCode || "");
+        if (codigo === "user_cancelled") {
+          throw new Error("Se canceló el inicio de sesión institucional. Para enviar, volvé a presionar el botón y completá el acceso.");
+        }
+        if (codigo.includes("popup")) {
+          throw new Error("El navegador bloqueó la ventana de Microsoft. Permití las ventanas emergentes para este sitio e intentá nuevamente.");
+        }
+        throw new Error("No se pudo iniciar sesión con Microsoft 365. Verificá que uses una cuenta institucional autorizada.");
+      }
+    }
+
+    async function archivoABase64(archivo) {
+      const bytes = new Uint8Array(await archivo.arrayBuffer());
+      const tamanoBloque = 0x8000;
+      let binario = "";
+      for (let indice = 0; indice < bytes.length; indice += tamanoBloque) {
+        binario += String.fromCharCode(...bytes.subarray(indice, indice + tamanoBloque));
+      }
+      return btoa(binario);
+    }
+
+    function crearCuerpoCorreoHtml(datos, cuenta) {
+      const remitente = cuenta && (cuenta.username || cuenta.name) ? (cuenta.username || cuenta.name) : "Cuenta institucional";
+      return `
+        <div style="font-family:Arial,Helvetica,sans-serif;color:#15242d;line-height:1.55">
+          <h2 style="color:#1e625d;margin:0 0 18px">Solicitud de audiencia de mediación</h2>
+          <p>Se remite una nueva solicitud de audiencia de mediación.</p>
+          <table style="border-collapse:collapse;width:100%;max-width:720px">
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>CUIJ EJE</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.cuij)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>MPF</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.mpf)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Carátula</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.caratula)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Fiscalía</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.fiscalia)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Responsable</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.fiscaliaResponsable)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Modalidad</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(datos.modalidad)}</td></tr>
+            <tr><td style="padding:6px 10px;border:1px solid #d8dfde"><strong>Cuenta remitente</strong></td><td style="padding:6px 10px;border:1px solid #d8dfde">${escapar(remitente)}</td></tr>
+          </table>
+          <p>Se adjuntan el documento Art. 92 original y la ficha completa de datos en PDF.</p>
+          <p style="color:#617078;font-size:12px">Centro de Mediación y Métodos Alternativos de Abordaje y Solución de Conflictos.</p>
+        </div>`;
+    }
+
+    async function enviarConMicrosoftGraph(datos, archivoArticulo, fichaDatosPdf, accesoGraph) {
+      const adjuntos = await Promise.all([archivoArticulo, fichaDatosPdf].map(async archivo => ({
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        name: archivo.name,
+        contentType: archivo.type || "application/pdf",
+        contentBytes: await archivoABase64(archivo)
+      })));
+
+      const mensaje = {
+        subject: `Solicitud de audiencia de mediación · ${datos.cuij}`,
+        body: {
+          contentType: "HTML",
+          content: crearCuerpoCorreoHtml(datos, accesoGraph.cuenta)
+        },
+        toRecipients: [{
+          emailAddress: { address: CORREO_DESTINO }
+        }],
+        replyTo: [{
+          emailAddress: { address: datos.fiscaliaEmail }
+        }],
+        attachments: adjuntos
+      };
+
+      const respuesta = await fetch("https://graph.microsoft.com/v1.0/me/sendMail", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accesoGraph.accessToken}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({ message: mensaje, saveToSentItems: true })
+      });
+
+      if (!respuesta.ok) {
+        let detalle = "";
+        try {
+          const errorGraph = await respuesta.json();
+          detalle = errorGraph && errorGraph.error && errorGraph.error.message ? errorGraph.error.message : "";
+        } catch (error) {
+          detalle = "";
+        }
+        if (respuesta.status === 401 || respuesta.status === 403) {
+          throw new Error("Microsoft 365 no autorizó el envío. Cerrá la sesión, ingresá nuevamente y aceptá el permiso para enviar correo.");
+        }
+        throw new Error(detalle || `Microsoft 365 no pudo procesar el envío (código ${respuesta.status}).`);
+      }
+    }
+
+
     function mostrarResultado(tipo, mensaje) {
       resultBox.className = `form-result visible ${tipo}`;
       resultBox.innerHTML = `<strong>${tipo === "success" ? "Solicitud enviada" : "No se pudo enviar"}</strong><span>${escapar(mensaje)}</span>`;
       resultBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
     }
 
-    function agregarCampo(salida, nombre, valor) {
-      salida.set(nombre, String(valor || "").trim());
-    }
 
     function limpiarFormulario() {
       form.reset();
@@ -804,56 +939,22 @@
 
       const datos = Object.fromEntries(datosTemp.entries());
       submitButton.disabled = true;
-      submitButton.innerHTML = "Generando ficha PDF…";
+      submitButton.innerHTML = "Preparando envío…";
+
 
       try {
+        submitButton.innerHTML = "Iniciando sesión institucional…";
+        const accesoGraph = await obtenerAccesoGraph();
+
+        submitButton.innerHTML = "Generando ficha PDF…";
         const fichaDatosPdf = await crearFichaDatosPdf(datos, archivoArt92, partes);
         if (archivoArt92.size + fichaDatosPdf.size > MAX_ARCHIVO_BYTES) {
-          throw new Error("El Art. 92 y la ficha de datos superan juntos el límite de 10 MB.");
+          throw new Error("El Art. 92 y la ficha de datos superan juntos el límite de envío institucional de 2,5 MB.");
         }
-
-        const salida = new FormData();
-        agregarCampo(salida, "_subject", `Solicitud de audiencia de mediación · ${datos.cuij}`);
-        agregarCampo(salida, "_template", "table");
-        agregarCampo(salida, "_captcha", "false");
-        agregarCampo(salida, "_url", window.location.href);
-        agregarCampo(salida, "email", datos.fiscaliaEmail);
-        agregarCampo(salida, "CUIJ EJE", datos.cuij);
-        agregarCampo(salida, "MPF", datos.mpf);
-        agregarCampo(salida, "Carátula", datos.caratula);
-        agregarCampo(salida, "Vencimiento de la IPP", datos.vencimientoIpp);
-        agregarCampo(salida, "Plazo para gestionar", datos.plazo);
-        agregarCampo(salida, "Partes denunciantes", formatearPartes(partes.denunciantes));
-        agregarCampo(salida, "Partes denunciadas", formatearPartes(partes.denunciados));
-        agregarCampo(salida, "Defensoría / abogado particular", datos.defensa);
-        agregarCampo(salida, "Teléfono de la defensa", datos.defensaTelefono);
-        agregarCampo(salida, "Correo de la defensa", datos.defensaEmail);
-        agregarCampo(salida, "Asesoría Tutelar", datos.asesoria);
-        agregarCampo(salida, "Querella particular", datos.querella);
-        agregarCampo(salida, "Teléfono de Asesoría Tutelar", datos.asesoriaTelefono);
-        agregarCampo(salida, "Fiscalía interviniente", datos.fiscalia);
-        agregarCampo(salida, "Responsable de la causa", datos.fiscaliaResponsable);
-        agregarCampo(salida, "Teléfono de fiscalía", datos.fiscaliaTelefono);
-        agregarCampo(salida, "Correo de fiscalía", datos.fiscaliaEmail);
-        agregarCampo(salida, "Sumariante", datos.sumariante);
-        agregarCampo(salida, "Modalidad requerida", datos.modalidad);
-        agregarCampo(salida, "Habilitación en el expediente", "Confirmada");
-        salida.set("attachment", archivoArt92, archivoArt92.name);
-        salida.set("attachment_2", fichaDatosPdf, fichaDatosPdf.name);
 
         submitButton.innerHTML = "Enviando…";
-        const respuesta = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(CORREO_DESTINO)}`, {
-          method: "POST",
-          headers: { Accept: "application/json" },
-          body: salida
-        });
-        const contenido = await respuesta.text();
-        let respuestaJson = {};
-        try { respuestaJson = JSON.parse(contenido); } catch (error) { respuestaJson = {}; }
-        if (!respuesta.ok || respuestaJson.success === false || respuestaJson.success === "false") {
-          throw new Error(respuestaJson.message || "El servicio de correo no pudo procesar la solicitud.");
-        }
-        mostrarResultado("success", "La solicitud fue remitida con el Art. 92 y la ficha de datos en PDF. En el primer uso, el correo destinatario debe confirmar la activación antes de recibirla.");
+        await enviarConMicrosoftGraph(datos, archivoArt92, fichaDatosPdf, accesoGraph);
+        mostrarResultado("success", "La solicitud fue remitida a mediaciononline@jusbaires.gob.ar con el Art. 92 y la ficha de datos en PDF.");
         limpiarFormulario();
       } catch (error) {
         mostrarResultado("error", error instanceof Error ? error.message : "No se pudo conectar con el servicio de correo. Intentá nuevamente.");
