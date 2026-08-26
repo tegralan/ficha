@@ -386,16 +386,20 @@
     const CORREO_DESTINO = "mediaciononline@jusbaires.gob.ar";
 
     const CLIENT_ID = "b26fea36-887e-4021-8611-08c97de5704e";
-    const TENANT_ID = "8e643b8b-b7de-4008-8503-d74eb8b64e7e";
     const REDIRECT_URI = "https://tegralan.github.io/ficha/";
     const GRAPH_SCOPES = ["User.Read", "Mail.Send"];
+    const TENANT_IDS_AUTORIZADOS = [
+      "8e643b8b-b7de-4008-8503-d74eb8b64e7e",
+      "fd710a70-ae1e-49a9-b23a-6413aa1a1622"
+    ];
+    const DOMINIOS_CUENTA_AUTORIZADOS = ["@fiscalias.gob.ar", "@jusbaires.gob.ar"];
     const MAX_ARCHIVO_BYTES = 2.5 * 1024 * 1024;
     const MAX_PAGINAS_ART92 = 5;
 
     const msalInstance = window.msal ? new window.msal.PublicClientApplication({
       auth: {
         clientId: CLIENT_ID,
-        authority: `https://login.microsoftonline.com/${TENANT_ID}`,
+        authority: "https://login.microsoftonline.com/organizations",
         redirectUri: REDIRECT_URI,
         navigateToLoginRequestUrl: false
       },
@@ -728,13 +732,41 @@
     }
 
 
+    function correoDeCuenta(cuenta) {
+      return String(cuenta && cuenta.username || "").trim().toLowerCase();
+    }
+
+    function tenantIdDeCuenta(cuenta) {
+      return String(
+        cuenta && (cuenta.tenantId || cuenta.idTokenClaims && cuenta.idTokenClaims.tid) || ""
+      ).trim().toLowerCase();
+    }
+
+    function cuentaInstitucionalAutorizada(cuenta) {
+      const correo = correoDeCuenta(cuenta);
+      const tenantId = tenantIdDeCuenta(cuenta);
+      const dominioAutorizado = DOMINIOS_CUENTA_AUTORIZADOS.some(dominio => correo.endsWith(dominio));
+      return dominioAutorizado && TENANT_IDS_AUTORIZADOS.includes(tenantId);
+    }
+
+    function validarCuentaInstitucional(cuenta) {
+      if (!cuentaInstitucionalAutorizada(cuenta)) {
+        throw new Error("Solo pueden enviar cuentas institucionales autorizadas de @fiscalias.gob.ar o @jusbaires.gob.ar.");
+      }
+      return cuenta;
+    }
+
     async function obtenerAccesoGraph() {
       if (!msalInstance) {
         throw new Error("No se pudo cargar el acceso institucional de Microsoft. Recargá la página e intentá nuevamente.");
       }
 
       const solicitud = { scopes: GRAPH_SCOPES };
-      let cuenta = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0] || null;
+      const cuentaActiva = msalInstance.getActiveAccount();
+      const cuentasGuardadas = msalInstance.getAllAccounts();
+      let cuenta = cuentaInstitucionalAutorizada(cuentaActiva)
+        ? cuentaActiva
+        : cuentasGuardadas.find(cuentaInstitucionalAutorizada) || null;
 
       try {
         if (!cuenta) {
@@ -742,22 +774,27 @@
             ...solicitud,
             prompt: "select_account"
           });
-          cuenta = ingreso.account;
+          cuenta = validarCuentaInstitucional(ingreso.account);
           msalInstance.setActiveAccount(cuenta);
           return { accessToken: ingreso.accessToken, cuenta };
         }
 
+        validarCuentaInstitucional(cuenta);
         msalInstance.setActiveAccount(cuenta);
         try {
           const acceso = await msalInstance.acquireTokenSilent({ ...solicitud, account: cuenta });
+          validarCuentaInstitucional(acceso.account || cuenta);
           return { accessToken: acceso.accessToken, cuenta };
         } catch (errorSilencioso) {
           const acceso = await msalInstance.acquireTokenPopup({ ...solicitud, account: cuenta });
-          cuenta = acceso.account || cuenta;
+          cuenta = validarCuentaInstitucional(acceso.account || cuenta);
           msalInstance.setActiveAccount(cuenta);
           return { accessToken: acceso.accessToken, cuenta };
         }
       } catch (error) {
+        if (error && error.message && error.message.includes("Solo pueden enviar cuentas institucionales autorizadas")) {
+          throw error;
+        }
         const codigo = String(error && error.errorCode || "");
         if (codigo === "user_cancelled") {
           throw new Error("Se canceló el inicio de sesión institucional. Para enviar, volvé a presionar el botón y completá el acceso.");
