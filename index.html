@@ -419,7 +419,7 @@
     const resultBox = document.getElementById("form-result");
 
     function nuevaParte() {
-      return { nombre: "", documento: "", fijo: "", celular: "", email: "", conformidad: "" };
+      return { nombre: "", documento: "", telefono: "", email: "", conformidad: "" };
     }
 
     function escapar(texto) {
@@ -439,8 +439,7 @@
           <div class="field-grid">
             <label class="field span-2"><span>Nombre y apellido *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="nombre" autocomplete="name" value="${escapar(parte.nombre)}" placeholder="Nombre completo"></label>
             <label class="field"><span>DNI / Pasaporte *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="documento" value="${escapar(parte.documento)}" placeholder="Documento"></label>
-            <label class="field"><span>Teléfono fijo *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="fijo" inputmode="tel" value="${escapar(parte.fijo)}" placeholder="011 0000-0000"></label>
-            <label class="field"><span>Celular *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="celular" inputmode="tel" value="${escapar(parte.celular)}" placeholder="11 0000-0000"></label>
+            <label class="field"><span>Teléfono *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="telefono" inputmode="tel" value="${escapar(parte.telefono)}" placeholder="Número de contacto"></label>
             <label class="field"><span>Correo electrónico *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="email" type="email" value="${escapar(parte.email)}" placeholder="nombre@correo.gob.ar"></label>
             <label class="field"><span>Conformidad *</span><select required data-party-type="${tipo}" data-index="${indice}" data-field="conformidad">
               <option value="">Seleccionar</option>
@@ -468,7 +467,7 @@
 
     function validarPartes() {
       guardarPartesDesdePantalla();
-      const camposObligatorios = ["nombre", "documento", "fijo", "celular", "email", "conformidad"];
+      const camposObligatorios = ["nombre", "documento", "telefono", "email", "conformidad"];
       for (const tipo of tipos) {
         for (let indice = 0; indice < partes[tipo].length; indice += 1) {
           const parte = partes[tipo][indice];
@@ -538,7 +537,7 @@
     }
 
     function parteCompleta(parte) {
-      return ["nombre", "documento", "fijo", "celular", "email", "conformidad"]
+      return ["nombre", "documento", "telefono", "email", "conformidad"]
         .every(campo => String(parte[campo] || "").trim());
     }
 
@@ -561,7 +560,7 @@
       return lista.map((parte, indice) => [
         `${indice + 1}. ${parte.nombre}`,
         parte.documento ? `Documento: ${parte.documento}` : "",
-        (parte.fijo || parte.celular) ? `Teléfono: ${[parte.fijo, parte.celular].filter(Boolean).join(" / ")}` : "",
+        parte.telefono ? `Teléfono: ${parte.telefono}` : "",
         parte.email ? `Correo: ${parte.email}` : "",
         parte.conformidad ? `Conformidad: ${parte.conformidad}` : ""
       ].filter(Boolean).join(" | ")).join("\n");
@@ -667,8 +666,7 @@
         lista.forEach((parte, indice) => {
           escribir(`${indice + 1}. ${parte.nombre || "-"}`, { fuente: negrita, tamano: 10, espacio: 1 });
           dato("Documento", parte.documento);
-          dato("Teléfono fijo", parte.fijo);
-          dato("Celular", parte.celular);
+          dato("Teléfono", parte.telefono);
           dato("Correo electrónico", parte.email);
           dato("Conformidad", parte.conformidad);
           y -= 3;
