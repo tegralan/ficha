@@ -149,6 +149,9 @@
     .party-card > header > div { display: flex; align-items: center; gap: 8px; }
     .party-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
     .party-card .field-grid { padding: 18px; }
+    .related-fields { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e1e7e6; }
+    .conditional-fields { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 17px 18px; }
+    .conditional-fields[hidden] { display: none; }
     .mandatory-action { display: flex; align-items: flex-start; gap: 11px; margin-top: 19px; padding: 15px 16px; border-left: 3px solid #c83c31; background: #fff3f1; color: #66322e; font-size: 13px; cursor: pointer; }
     .mandatory-action input, .consent-row input { width: 17px; min-height: 17px; height: 17px; margin: 2px 0 0; }
     .mandatory-action input { accent-color: #a3322a; }
@@ -217,7 +220,7 @@
       .form-section, .submit-card { padding: 20px; }
       .section-heading { align-items: flex-start; }
       .section-heading > div:first-child { align-items: flex-start; flex-direction: column; gap: 5px; }
-      .field-grid, .form-aside { grid-template-columns: 1fr; }
+      .field-grid, .form-aside, .conditional-fields { grid-template-columns: 1fr; }
       .field.span-2, .privacy-card { grid-column: auto; }
       .party-card .field-grid { padding: 15px; }
       .upload-box { align-items: flex-start; flex-wrap: wrap; padding: 20px; }
@@ -275,6 +278,7 @@
             <label class="field span-2"><span>Carátula *</span><input required name="caratula"></label>
             <label class="field"><span>Vencimiento de la IPP *</span><input required name="vencimientoIpp" type="date"></label>
             <label class="field"><span>Plazo para gestionar *</span><input required name="plazo" placeholder="Ej.: 10 días"></label>
+            <label class="field span-2"><span>Asesoría Tutelar *</span><input required name="asesoria" placeholder="Indicar No corresponde si no interviene"></label>
           </div>
         </section>
 
@@ -285,6 +289,9 @@
           </div>
           <div id="denunciantes-list" class="party-stack"></div>
           <button class="secondary-button" type="button" data-add-party="denunciantes"><span aria-hidden="true">＋</span> Agregar otra parte</button>
+          <div class="field-grid related-fields">
+            <label class="field span-2"><span>Querella particular *</span><input required name="querella" placeholder="Indicar No corresponde si no interviene"></label>
+          </div>
         </section>
 
         <section class="form-section" aria-labelledby="denunciados-title">
@@ -294,22 +301,28 @@
           </div>
           <div id="denunciados-list" class="party-stack"></div>
           <button class="secondary-button" type="button" data-add-party="denunciados"><span aria-hidden="true">＋</span> Agregar otra parte</button>
-        </section>
-
-        <section class="form-section" aria-labelledby="defense-title">
-          <div class="section-heading"><div><span class="step-kicker">04</span><h2 id="defense-title">Defensa y otros intervinientes</h2></div></div>
-          <div class="field-grid">
-            <label class="field"><span>Defensoría / abogado particular *</span><input required name="defensa"></label>
-            <label class="field"><span>Teléfono de la defensa *</span><input required name="defensaTelefono" inputmode="tel"></label>
-            <label class="field"><span>Correo de la defensa *</span><input required name="defensaEmail" type="email"></label>
-            <label class="field"><span>Asesoría Tutelar *</span><input required name="asesoria" placeholder="Indicar No corresponde si no interviene"></label>
-            <label class="field"><span>Querella particular *</span><input required name="querella" placeholder="Indicar No corresponde si no interviene"></label>
-            <label class="field"><span>Teléfono de Asesoría Tutelar *</span><input required name="asesoriaTelefono" inputmode="tel" placeholder="Indicar No corresponde si no interviene"></label>
+          <div class="field-grid related-fields">
+            <label class="field span-2">
+              <span>Defensoría / Letrado particular *</span>
+              <select required name="defensaTipo" id="defensa-tipo">
+                <option value="" selected disabled>Seleccionar</option>
+                <option value="Defensoría">Defensoría</option>
+                <option value="Letrado particular">Letrado particular</option>
+              </select>
+            </label>
+            <div id="campos-defensoria" class="conditional-fields" hidden>
+              <label class="field"><span>Defensoría interviniente *</span><input name="defensa" disabled></label>
+              <label class="field"><span>Nombre y apellido de quien atiende la causa *</span><input name="defensaResponsable" disabled></label>
+            </div>
+            <div id="campos-letrado" class="conditional-fields" hidden>
+              <label class="field"><span>Nombre y apellido del letrado particular *</span><input name="letradoNombre" disabled></label>
+              <label class="field"><span>Teléfono del letrado particular *</span><input name="defensaTelefono" inputmode="tel" disabled></label>
+            </div>
           </div>
         </section>
 
         <section class="form-section" aria-labelledby="prosecutor-title">
-          <div class="section-heading"><div><span class="step-kicker">05</span><h2 id="prosecutor-title">Contacto de fiscalía</h2></div></div>
+          <div class="section-heading"><div><span class="step-kicker">04</span><h2 id="prosecutor-title">Contacto de fiscalía</h2></div></div>
           <div class="field-grid">
             <label class="field"><span>Fiscalía interviniente *</span><input required name="fiscalia"></label>
             <label class="field"><span>Sumariante *</span><input required name="sumariante"></label>
@@ -324,7 +337,7 @@
 
         <section class="form-section" aria-labelledby="article-title">
           <div class="section-heading">
-            <div><span class="step-kicker">06</span><h2 id="article-title">Documento Art. 92</h2></div>
+            <div><span class="step-kicker">05</span><h2 id="article-title">Documento Art. 92</h2></div>
             <span class="required-label">PDF</span>
           </div>
           <label id="upload-box" class="upload-box">
@@ -359,7 +372,7 @@
           <ul>
             <li>CUIJ EJE, MPF y carátula</li>
             <li>Datos de todas las partes</li>
-            <li>Contacto de la defensa</li>
+            <li>Defensoría o letrado particular</li>
             <li>Contacto de fiscalía</li>
             <li>Art. 92 firmado en PDF</li>
           </ul>
@@ -421,9 +434,28 @@
     const articleError = document.getElementById("article-error");
     const submitButton = document.getElementById("submit-button");
     const resultBox = document.getElementById("form-result");
+    const defensaTipo = document.getElementById("defensa-tipo");
+    const camposDefensoria = document.getElementById("campos-defensoria");
+    const camposLetrado = document.getElementById("campos-letrado");
 
     function nuevaParte() {
       return { nombre: "", documento: "", telefono: "", email: "", conformidad: "" };
+    }
+
+    function configurarCamposCondicionales(contenedor, habilitar) {
+      contenedor.hidden = !habilitar;
+      contenedor.querySelectorAll("input, select, textarea").forEach(campo => {
+        campo.disabled = !habilitar;
+        campo.required = habilitar;
+        if (!habilitar) campo.value = "";
+      });
+    }
+
+    function actualizarCamposDefensa() {
+      const seleccion = defensaTipo.value;
+      configurarCamposCondicionales(camposDefensoria, seleccion === "Defensoría");
+      configurarCamposCondicionales(camposLetrado, seleccion === "Letrado particular");
+      actualizarProgreso();
     }
 
     function escapar(texto) {
@@ -694,16 +726,20 @@
       dato("Vencimiento de la IPP", datos.vencimientoIpp);
       dato("Plazo para gestionar", datos.plazo);
 
-      agregarPartes("PARTES DENUNCIANTES", datosPartes.denunciantes);
-      agregarPartes("PARTES DENUNCIADAS", datosPartes.denunciados);
-
-      seccion("CONTACTO DE LA DEFENSA");
-      dato("Defensoría / abogado particular", datos.defensa);
-      dato("Teléfono", datos.defensaTelefono);
-      dato("Correo electrónico", datos.defensaEmail);
       dato("Asesoría Tutelar", datos.asesoria);
+
+      agregarPartes("PARTES DENUNCIANTES", datosPartes.denunciantes);
       dato("Querella particular", datos.querella);
-      dato("Teléfono de Asesoría Tutelar", datos.asesoriaTelefono);
+
+      agregarPartes("PARTES DENUNCIADAS", datosPartes.denunciados);
+      dato("Defensoría / Letrado particular", datos.defensaTipo);
+      if (datos.defensaTipo === "Defensoría") {
+        dato("Defensoría interviniente", datos.defensa);
+        dato("Nombre y apellido de quien atiende la causa", datos.defensaResponsable);
+      } else {
+        dato("Nombre y apellido del letrado particular", datos.letradoNombre);
+        dato("Teléfono del letrado particular", datos.defensaTelefono);
+      }
 
       seccion("CONTACTO DE FISCALÍA");
       dato("Fiscalía interviniente", datos.fiscalia);
@@ -900,6 +936,7 @@
       articuloValido = false;
       estadoArticulo("idle", "");
       art92Input.value = "";
+      actualizarCamposDefensa();
       actualizarProgreso();
     }
 
@@ -933,6 +970,7 @@
       actualizarProgreso();
     });
     document.addEventListener("change", actualizarProgreso);
+    defensaTipo.addEventListener("change", actualizarCamposDefensa);
     art92Input.addEventListener("change", () => validarArticulo(art92Input.files && art92Input.files[0] ? art92Input.files[0] : null));
 
     form.addEventListener("submit", async evento => {
@@ -1000,6 +1038,7 @@
     partes.denunciados = [nuevaParte()];
     renderizarPartes("denunciantes");
     renderizarPartes("denunciados");
+    actualizarCamposDefensa();
     actualizarProgreso();
   </script>
 </body>
