@@ -149,7 +149,6 @@
     .party-card > header > div { display: flex; align-items: center; gap: 8px; }
     .party-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--brand); }
     .party-card .field-grid { padding: 18px; }
-    .related-fields { margin-top: 20px; padding-top: 20px; border-top: 1px solid #e1e7e6; }
     .conditional-fields { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 17px 18px; }
     .conditional-fields[hidden] { display: none; }
     .mandatory-action { display: flex; align-items: flex-start; gap: 11px; margin-top: 19px; padding: 15px 16px; border-left: 3px solid #c83c31; background: #fff3f1; color: #66322e; font-size: 13px; cursor: pointer; }
@@ -289,9 +288,6 @@
           </div>
           <div id="denunciantes-list" class="party-stack"></div>
           <button class="secondary-button" type="button" data-add-party="denunciantes"><span aria-hidden="true">＋</span> Agregar otra parte</button>
-          <div class="field-grid related-fields">
-            <label class="field span-2"><span>Querella particular *</span><input required name="querella" placeholder="Indicar No corresponde si no interviene"></label>
-          </div>
         </section>
 
         <section class="form-section" aria-labelledby="denunciados-title">
@@ -301,24 +297,6 @@
           </div>
           <div id="denunciados-list" class="party-stack"></div>
           <button class="secondary-button" type="button" data-add-party="denunciados"><span aria-hidden="true">＋</span> Agregar otra parte</button>
-          <div class="field-grid related-fields">
-            <label class="field span-2">
-              <span>Defensoría / Letrado particular *</span>
-              <select required name="defensaTipo" id="defensa-tipo">
-                <option value="" selected disabled>Seleccionar</option>
-                <option value="Defensoría">Defensoría</option>
-                <option value="Letrado particular">Letrado particular</option>
-              </select>
-            </label>
-            <div id="campos-defensoria" class="conditional-fields" hidden>
-              <label class="field"><span>Defensoría interviniente *</span><input name="defensa" disabled></label>
-              <label class="field"><span>Nombre y apellido de quien atiende la causa *</span><input name="defensaResponsable" disabled></label>
-            </div>
-            <div id="campos-letrado" class="conditional-fields" hidden>
-              <label class="field"><span>Nombre y apellido del letrado particular *</span><input name="letradoNombre" disabled></label>
-              <label class="field"><span>Teléfono del letrado particular *</span><input name="defensaTelefono" inputmode="tel" disabled></label>
-            </div>
-          </div>
         </section>
 
         <section class="form-section" aria-labelledby="prosecutor-title">
@@ -434,28 +412,21 @@
     const articleError = document.getElementById("article-error");
     const submitButton = document.getElementById("submit-button");
     const resultBox = document.getElementById("form-result");
-    const defensaTipo = document.getElementById("defensa-tipo");
-    const camposDefensoria = document.getElementById("campos-defensoria");
-    const camposLetrado = document.getElementById("campos-letrado");
 
     function nuevaParte() {
-      return { nombre: "", documento: "", telefono: "", email: "", conformidad: "" };
-    }
-
-    function configurarCamposCondicionales(contenedor, habilitar) {
-      contenedor.hidden = !habilitar;
-      contenedor.querySelectorAll("input, select, textarea").forEach(campo => {
-        campo.disabled = !habilitar;
-        campo.required = habilitar;
-        if (!habilitar) campo.value = "";
-      });
-    }
-
-    function actualizarCamposDefensa() {
-      const seleccion = defensaTipo.value;
-      configurarCamposCondicionales(camposDefensoria, seleccion === "Defensoría");
-      configurarCamposCondicionales(camposLetrado, seleccion === "Letrado particular");
-      actualizarProgreso();
+      return {
+        nombre: "",
+        documento: "",
+        telefono: "",
+        email: "",
+        conformidad: "",
+        querella: "",
+        defensaTipo: "",
+        defensa: "",
+        defensaResponsable: "",
+        letradoNombre: "",
+        defensaTelefono: ""
+      };
     }
 
     function escapar(texto) {
@@ -466,6 +437,26 @@
 
     function tarjetaParte(tipo, parte, indice) {
       const singular = tipo === "denunciantes" ? "denunciante" : "denunciada";
+      const camposInterviniente = tipo === "denunciantes"
+        ? `
+            <label class="field span-2"><span>Querella particular *</span><input required data-party-type="${tipo}" data-index="${indice}" data-field="querella" value="${escapar(parte.querella)}" placeholder="Indicar No corresponde si no interviene"></label>`
+        : `
+            <label class="field span-2">
+              <span>Defensoría / Letrado particular *</span>
+              <select required data-party-type="${tipo}" data-index="${indice}" data-field="defensaTipo">
+                <option value="">Seleccionar</option>
+                ${["Defensoría", "Letrado particular"].map(opcion => `<option${parte.defensaTipo === opcion ? " selected" : ""}>${opcion}</option>`).join("")}
+              </select>
+            </label>
+            <div class="conditional-fields" ${parte.defensaTipo === "Defensoría" ? "" : "hidden"}>
+              <label class="field"><span>Defensoría interviniente *</span><input ${parte.defensaTipo === "Defensoría" ? "required" : "disabled"} data-party-type="${tipo}" data-index="${indice}" data-field="defensa" value="${escapar(parte.defensa)}"></label>
+              <label class="field"><span>Nombre y apellido de quien atiende la causa *</span><input ${parte.defensaTipo === "Defensoría" ? "required" : "disabled"} data-party-type="${tipo}" data-index="${indice}" data-field="defensaResponsable" value="${escapar(parte.defensaResponsable)}"></label>
+            </div>
+            <div class="conditional-fields" ${parte.defensaTipo === "Letrado particular" ? "" : "hidden"}>
+              <label class="field"><span>Nombre y apellido del letrado particular *</span><input ${parte.defensaTipo === "Letrado particular" ? "required" : "disabled"} data-party-type="${tipo}" data-index="${indice}" data-field="letradoNombre" value="${escapar(parte.letradoNombre)}"></label>
+              <label class="field"><span>Teléfono del letrado particular *</span><input ${parte.defensaTipo === "Letrado particular" ? "required" : "disabled"} data-party-type="${tipo}" data-index="${indice}" data-field="defensaTelefono" inputmode="tel" value="${escapar(parte.defensaTelefono)}"></label>
+            </div>`;
+
       return `
         <article class="party-card" data-party-card="${tipo}-${indice}">
           <header>
@@ -481,6 +472,7 @@
               <option value="">Seleccionar</option>
               ${["Sí", "No", "Pendiente", "Sin contacto"].map(opcion => `<option${parte.conformidad === opcion ? " selected" : ""}>${opcion}</option>`).join("")}
             </select></label>
+            ${camposInterviniente}
           </div>
         </article>`;
     }
@@ -501,13 +493,25 @@
       });
     }
 
+    function camposObligatoriosParte(tipo, parte) {
+      const campos = ["nombre", "documento", "telefono", "email", "conformidad"];
+      if (tipo === "denunciantes") return [...campos, "querella"];
+      if (parte.defensaTipo === "Defensoría") {
+        return [...campos, "defensaTipo", "defensa", "defensaResponsable"];
+      }
+      if (parte.defensaTipo === "Letrado particular") {
+        return [...campos, "defensaTipo", "letradoNombre", "defensaTelefono"];
+      }
+      return [...campos, "defensaTipo"];
+    }
+
     function validarPartes() {
       guardarPartesDesdePantalla();
-      const camposObligatorios = ["nombre", "documento", "telefono", "email", "conformidad"];
       for (const tipo of tipos) {
         for (let indice = 0; indice < partes[tipo].length; indice += 1) {
           const parte = partes[tipo][indice];
-          const faltante = camposObligatorios.find(campo => !String(parte[campo] || "").trim());
+          const faltante = camposObligatoriosParte(tipo, parte)
+            .find(campo => !String(parte[campo] || "").trim());
           if (faltante) {
             const nombreTipo = tipo === "denunciantes" ? "denunciante" : "denunciada";
             mostrarResultado("error", `Completá todos los datos de la parte ${nombreTipo} ${indice + 1}.`);
@@ -572,8 +576,8 @@
       }
     }
 
-    function parteCompleta(parte) {
-      return ["nombre", "documento", "telefono", "email", "conformidad"]
+    function parteCompleta(tipo, parte) {
+      return camposObligatoriosParte(tipo, parte)
         .every(campo => String(parte[campo] || "").trim());
     }
 
@@ -697,7 +701,7 @@
         escribir(`${etiqueta}: ${String(valor || "").trim() || "-"}`, { espacio: 2 });
       };
 
-      const agregarPartes = (titulo, lista) => {
+      const agregarPartes = (titulo, lista, tipo) => {
         seccion(titulo);
         lista.forEach((parte, indice) => {
           escribir(`${indice + 1}. ${parte.nombre || "-"}`, { fuente: negrita, tamano: 10, espacio: 1 });
@@ -705,6 +709,18 @@
           dato("Teléfono", parte.telefono);
           dato("Correo electrónico", parte.email);
           dato("Conformidad", parte.conformidad);
+          if (tipo === "denunciantes") {
+            dato("Querella particular", parte.querella);
+          } else {
+            dato("Defensoría / Letrado particular", parte.defensaTipo);
+            if (parte.defensaTipo === "Defensoría") {
+              dato("Defensoría interviniente", parte.defensa);
+              dato("Nombre y apellido de quien atiende la causa", parte.defensaResponsable);
+            } else {
+              dato("Nombre y apellido del letrado particular", parte.letradoNombre);
+              dato("Teléfono del letrado particular", parte.defensaTelefono);
+            }
+          }
           y -= 3;
         });
       };
@@ -728,18 +744,8 @@
 
       dato("Asesoría Tutelar", datos.asesoria);
 
-      agregarPartes("PARTES DENUNCIANTES", datosPartes.denunciantes);
-      dato("Querella particular", datos.querella);
-
-      agregarPartes("PARTES DENUNCIADAS", datosPartes.denunciados);
-      dato("Defensoría / Letrado particular", datos.defensaTipo);
-      if (datos.defensaTipo === "Defensoría") {
-        dato("Defensoría interviniente", datos.defensa);
-        dato("Nombre y apellido de quien atiende la causa", datos.defensaResponsable);
-      } else {
-        dato("Nombre y apellido del letrado particular", datos.letradoNombre);
-        dato("Teléfono del letrado particular", datos.defensaTelefono);
-      }
+      agregarPartes("PARTES DENUNCIANTES", datosPartes.denunciantes, "denunciantes");
+      agregarPartes("PARTES DENUNCIADAS", datosPartes.denunciados, "denunciados");
 
       seccion("CONTACTO DE FISCALÍA");
       dato("Fiscalía interviniente", datos.fiscalia);
@@ -936,7 +942,6 @@
       articuloValido = false;
       estadoArticulo("idle", "");
       art92Input.value = "";
-      actualizarCamposDefensa();
       actualizarProgreso();
     }
 
@@ -969,8 +974,22 @@
       }
       actualizarProgreso();
     });
-    document.addEventListener("change", actualizarProgreso);
-    defensaTipo.addEventListener("change", actualizarCamposDefensa);
+    document.addEventListener("change", evento => {
+      const campo = evento.target.closest("[data-party-type][data-field]");
+      if (campo) {
+        const tipo = campo.dataset.partyType;
+        const indice = Number(campo.dataset.index);
+        if (partes[tipo] && partes[tipo][indice]) {
+          partes[tipo][indice][campo.dataset.field] = campo.value;
+        }
+        if (campo.dataset.field === "defensaTipo") {
+          guardarPartesDesdePantalla();
+          renderizarPartes(tipo);
+          return;
+        }
+      }
+      actualizarProgreso();
+    });
     art92Input.addEventListener("change", () => validarArticulo(art92Input.files && art92Input.files[0] ? art92Input.files[0] : null));
 
     form.addEventListener("submit", async evento => {
@@ -1038,7 +1057,6 @@
     partes.denunciados = [nuevaParte()];
     renderizarPartes("denunciantes");
     renderizarPartes("denunciados");
-    actualizarCamposDefensa();
     actualizarProgreso();
   </script>
 </body>
